@@ -164,6 +164,10 @@ const POLL = {
   nitrogen_dioxide: {name:"NO₂",   color:"#2f8bff", size:12, label:"NO2"},
   ozone:            {name:"O₃",    color:"#b56bff", size:18, label:"O3"}
 };
+// colour of the human mask. [r,g,b] 0-255, mix 0-1
+const PERSON_TINT = [255, 78, 205];   // magenta
+const PERSON_MIX  = 0.6;
+
 const BASE_BOXES = 130;   // boxes at exactly the guideline value
 const MIN_BOXES  = 8;     // the machine never reports nothing
 const MAX_TOTAL  = 1400;
@@ -373,9 +377,9 @@ function drawFrame(frame, masks, boxes, air, showLabels){
       d[p+2] = d[p+2]*0.35 + 40;
     } else if (masks.person[i]){
       const p = i*4;
-      d[p]   = d[p]*0.55 + 90;
-      d[p+1] = d[p+1]*0.55 + 90;
-      d[p+2] = d[p+2]*0.55 + 100;
+      d[p]   = d[p]*(1-PERSON_MIX) + PERSON_TINT[0]*PERSON_MIX;
+      d[p+1] = d[p+1]*(1-PERSON_MIX) + PERSON_TINT[1]*PERSON_MIX;
+      d[p+2] = d[p+2]*(1-PERSON_MIX) + PERSON_TINT[2]*PERSON_MIX;
     }
   }
   ctx.putImageData(img, 0, 0);
