@@ -11,7 +11,7 @@
 </head>
 <body>
 <div class="wrap">
-<div class="bar"><a href="../">← false_positives</a><span>[2] eye · upload</span></div>
+<div class="bar"><a href="../">← false_positives</a><span>[2] eye · upload · segformer-ade20k · onnx · webgpu|wasm</span></div>
 
 <header>
   <h1>UPLOAD<span class="cur">&nbsp;</span></h1>
@@ -37,6 +37,17 @@
 <div class="result" id="result">
   <div class="stage"><canvas id="canvas"></canvas></div>
   <div class="readout" id="readout"></div>
+</div>
+<div class="readout" style="margin-top:28px">
+  <h2>SYSTEM</h2>
+  <div class="row"><span class="k">model</span><span class="v">SegFormer (b0 fast · b2 slow), semantic segmentation</span></div>
+  <div class="row"><span class="k">training data</span><span class="v">ADE20K, 150 classes, 512×512</span></div>
+  <div class="row"><span class="k">classes used</span><span class="v">vegetation: tree, grass, plant, palm, flower, field · human: person</span></div>
+  <div class="row"><span class="k">runtime</span><span class="v">Transformers.js · ONNX · WebGPU, else WASM · in your browser</span></div>
+  <div class="row"><span class="k">air data</span><span class="v">Copernicus CAMS Europe via Open-Meteo · hourly · modelled</span></div>
+  <div class="row"><span class="k">pollutants</span><span class="v">PM2.5 · PM10 · NO₂ · O₃, against WHO guidelines</span></div>
+  <div class="row"><span class="k">detections</span><span class="v">count from the air · hidden on trees · breathed in by bodies</span></div>
+  <div class="row"><span class="k">ground truth</span><span class="v">none</span></div>
 </div>
 </div>
 

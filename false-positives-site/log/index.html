@@ -15,7 +15,7 @@
 
 <header>
   <h1>LOG<span class="cur">&nbsp;</span></h1>
-  <p>Every line is a detection that never happened, somewhere in Greece, now. The speed of the writing follows the real air: the dirtier it is, the faster the machine writes.</p>
+  <p>This is the machine's diary. No camera is running here: the machine imagines it is watching five Greek cities and writes down every pollution box it would draw. Each line is one invented detection. What is real is the air: the pollutant chosen, the measured value and the writing speed all come from the live data. The dirtier the air, the faster it writes.</p>
   <p class="boot"><span class="prompt">$</span> tail -f /var/log/false_positives.log</p>
 </header>
 
@@ -23,6 +23,17 @@
   <span>detections since you arrived <b id="count">0</b></span>
   <span>confirmed <b>0</b></span>
   <span>now reading <b id="where">…</b></span>
+</div>
+
+<div class="readout" style="margin-bottom:14px">
+  <h2>HOW TO READ A LINE</h2>
+  <div class="row"><span class="k">2026-09-21 14:03:22.418</span><span class="v">when the machine "saw" it</span></div>
+  <div class="row"><span class="k">Thessaloniki 40.64312N 22.95120E</span><span class="v">city, and an invented point in it</span></div>
+  <div class="row"><span class="k">NO2</span><span class="v">pollutant, picked in proportion to the real levels</span></div>
+  <div class="row"><span class="k">conf 0.93</span><span class="v">how sure it is: higher when the air is cleaner</span></div>
+  <div class="row"><span class="k">box[312, 88, 17]</span><span class="v">where it would draw the box: x, y, size</span></div>
+  <div class="row"><span class="k">measured 41.2 µg/m³</span><span class="v">the real value for that city, this hour</span></div>
+  <div class="row"><span class="k">detected: false</span><span class="v">it never happened</span></div>
 </div>
 
 <div class="log" id="log" aria-live="off"></div>
