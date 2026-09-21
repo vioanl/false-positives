@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>False Positives · upload</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+<div class="wrap">
+<div class="bar"><a href="../">← false_positives</a><span>[2] eye · upload</span></div>
+
+<header>
+  <h1>UPLOAD<span class="cur">&nbsp;</span></h1>
+  <p>Give the machine a photograph or a short video. It segments the vegetation and the people it finds, then fills the rest of the frame with detections of air pollution it cannot see.</p>
+  <p class="boot"><span class="prompt">$</span> ./false_positives --source=local --air=live --truth=none</p>
+</header>
+
+<div class="controls">
+  <div class="field"><label for="city">--city</label><select id="city"></select></div>
+  <div class="field"><label for="model">--model</label><select id="model"></select></div>
+  <div class="field"><label for="fps">--fps</label>
+    <select id="fps"><option value="6">6 fps</option><option value="10">10 fps</option><option value="3">3 fps</option></select>
+  </div>
+</div>
+
+<div class="drop" id="drop" tabindex="0" role="button">
+  <strong>[ drop image or video ]</strong>
+  <p>Or click to choose a file. Video is cut to the first 15 seconds. Nothing is uploaded: the model runs in your browser.</p>
+  <input type="file" id="file" accept="image/*,video/*" hidden />
+</div>
+
+<div class="status" id="status"></div>
+<div class="result" id="result">
+  <div class="stage"><canvas id="canvas"></canvas></div>
+  <div class="readout" id="readout"></div>
+</div>
+</div>
+
+<script type="module">
+import { WHO, getAir, fillCitySelect, cityById } from "../shared/air.js";
+import { MODELS, segment, makeBoxes, stepBoxes, drawFrame, readoutRows } from "../shared/detect.js";
+
+const $ = id => document.getElementById(id);
+const say = t => { $("status").innerHTML = '<span class="prompt">&gt;</span> ' + t; };
+fillCitySelect($("city"));
+$("model").innerHTML = MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join("");
+
+const canvas = $("canvas");
+const MAX_SECONDS = 15;
+let lastVideo = null;
+
+function readout(m, air, claimed, drawn, video, seconds){
+  let extra = "";
+  if (m.people > 0){
+    const minutes = video ? seconds/60 : 1;
+    const inhaled = (air.pm2_5||0) * 0.008 * minutes;   // 8 L/min at rest
+    extra = `<div class="row"><span class="k">PM2.5 inhaled</span><span class="v">${inhaled.toFixed(3)} µg / person${video ? "" : " / min"}</span></div>`;
+  }
+  $("readout").innerHTML = `<h2>REPORT</h2>${readoutRows(m, air, claimed, drawn)}${extra}
+    <p class="src">${air.city}, ${air.source}, hour of ${air.time}. No station measured this frame.</p>
+    <div class="actions"><button id="save">${video ? "save video" : "save image"}</button></div>`;
+  $("save").onclick = () => {
+    const a = document.createElement("a");
+    if (video){ if (!lastVideo) return; a.href = URL.createObjectURL(lastVideo); a.download = "false-positives.webm"; }
+    else { a.href = canvas.toDataURL("image/png"); a.download = "false-positives.png"; }
+    a.click();
+  };
+}
+
+async function run(file){
+  $("result").classList.remove("on");
+  let air;
+  try { say("reading the air."); air = await getAir(cityById($("city").value)); }
+  catch(e){ say("air: no signal. check your connection."); return; }
+  const model = $("model").value;
+
+  if (!file.type.startsWith("video")){
+    const bmp = await createImageBitmap(file);
+    const sc = Math.min(1, 1100/Math.max(bmp.width, bmp.height));
+    const src = document.createElement("canvas");
+    src.width = Math.round(bmp.width*sc); src.height = Math.round(bmp.height*sc);
+    src.getContext("2d").drawImage(bmp, 0, 0, src.width, src.height);
+    say("segmenting.");
+    const m = await segment(src, model, say);
+    const boxes = makeBoxes(src.width, src.height, air);
+    const drawn = drawFrame(canvas, src, m, boxes, air);
+    readout(m, air, boxes.length, drawn, false);
+    $("result").classList.add("on");
+    say(`done. ${boxes.length} detections claimed, ${drawn} drawn, none of them real.`);
+    return;
+  }
+
+  const v = document.createElement("video");
+  v.src = URL.createObjectURL(file); v.muted = true; v.playsInline = true;
+  await new Promise(r => v.onloadedmetadata = r);
+  const sc = Math.min(1, 900/Math.max(v.videoWidth, v.videoHeight));
+  const src = document.createElement("canvas");
+  src.width = Math.round(v.videoWidth*sc); src.height = Math.round(v.videoHeight*sc);
+  const sctx = src.getContext("2d");
+  canvas.width = src.width; canvas.height = src.height;
+  $("result").classList.add("on");
+
+  const fps = parseInt($("fps").value, 10);
+  const dur = Math.min(v.duration || MAX_SECONDS, MAX_SECONDS);
+  const chunks = [];
+  const rec = new MediaRecorder(canvas.captureStream(fps), { mimeType:"video/webm" });
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => { lastVideo = new Blob(chunks, { type:"video/webm" }); };
+  rec.start();
+
+  const boxes = makeBoxes(src.width, src.height, air);
+  let m = null, drawn = 0;
+  for (let t = 0; t < dur; t += 1/fps){
+    v.currentTime = t;
+    await new Promise(r => v.onseeked = r);
+    sctx.drawImage(v, 0, 0, src.width, src.height);
+    m = await segment(src, model, say);
+    stepBoxes(boxes, src.width, src.height, 3);
+    drawn = drawFrame(canvas, src, m, boxes, air);
+    say(`segmenting ${t.toFixed(1)} of ${dur.toFixed(1)} s.`);
+  }
+  rec.stop();
+  readout(m, air, boxes.length, drawn, true, dur);
+  say(`done. ${boxes.length} detections held across ${dur.toFixed(1)} s.`);
+}
+
+const drop = $("drop"), input = $("file");
+drop.onclick = () => input.click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") input.click(); };
+input.onchange = e => e.target.files[0] && run(e.target.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) run(f); };
+</script>
+</body>
+</html>
