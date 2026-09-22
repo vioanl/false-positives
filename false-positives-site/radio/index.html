@@ -15,13 +15,16 @@
 
 <header>
   <h1>RADIO<span class="cur">&nbsp;</span></h1>
-  <p>The air of Greece as a continuous broadcast. Every three minutes the station moves to another city. Each pollutant has its own voice, and a small signal ticks faster the cleaner the air gets: the machine's certainty.</p>
+  <p>The air of Greece as a continuous broadcast. Every three minutes the station moves to another city, or you can move it yourself. Each pollutant has its own voice, and a small signal ticks faster the cleaner the air gets: the machine's certainty.</p>
   <p class="boot"><span class="prompt">$</span> ./false_positives --output=audio --air=live</p>
 </header>
 
 <div class="controls">
   <button id="play">▶ tune in</button>
   <button id="stop" disabled>■ off</button>
+  <button id="prev" disabled>◀ prev city</button>
+  <div class="field"><label for="city">--city</label><select id="city" disabled></select></div>
+  <button id="next" disabled>next city ▶</button>
 </div>
 
 <canvas class="scope" id="scope" width="1200" height="190"></canvas>
@@ -40,7 +43,7 @@ const CITY_SECONDS = 180;
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-let ac = null, V = null, air = {}, cityIdx = 0, timers = [], raf = 0;
+let ac = null, V = null, air = {}, cityIdx = 0, timers = [], raf = 0, cycle = 0, nextAt = 0;
 
 function noiseBuffer(ctx, seconds, brown){
   const b = ctx.createBuffer(1, ctx.sampleRate*seconds, ctx.sampleRate), d = b.getChannelData(0);
@@ -137,7 +140,7 @@ function showReadout(a){
   for (const k of Object.keys(WHO))
     html += row(`<span class="swatch" style="background:${POLL[k].color}"></span>${POLL[k].name}`, (a[k]||0).toFixed(1) + " µg/m³");
   html += row("certainty ticks", V.tickRate.toFixed(2) + " / s");
-  html += `<p class="src">${a.source}, hour of ${a.time}. next city in ${CITY_SECONDS/60} min.</p>`;
+  html += `<p class="src">${a.source}, hour of ${a.time}. <span id="countdown"></span></p>`;
   $("readout").innerHTML = html;
 }
 
@@ -172,21 +175,47 @@ async function play(){
   setAir(air[CITIES[cityIdx].id]);
   timers = [
     setInterval(crackle, 50),
-    setInterval(() => { cityIdx = (cityIdx+1) % CITIES.length; setAir(air[CITIES[cityIdx].id]); }, CITY_SECONDS*1000),
     setInterval(async () => { await loadAll(); setAir(air[CITIES[cityIdx].id]); }, 15*60*1000)
   ];
+  restartCycle();
   scope();
   $("stop").disabled = false;
+  ["prev","next","city"].forEach(id => $(id).disabled = false);
+}
+
+// the station moves by itself every CITY_SECONDS; a manual change restarts the countdown
+function restartCycle(){
+  clearInterval(cycle);
+  nextAt = Date.now() + CITY_SECONDS*1000;
+  cycle = setInterval(() => goCity(cityIdx + 1), CITY_SECONDS*1000);
+}
+function goCity(i, manual){
+  cityIdx = (i + CITIES.length) % CITIES.length;
+  $("city").value = CITIES[cityIdx].id;
+  setAir(air[CITIES[cityIdx].id]);
+  if (manual) restartCycle(); else nextAt = Date.now() + CITY_SECONDS*1000;
 }
 
 function stop(){
   timers.forEach(clearInterval); timers = [];
+  clearInterval(cycle);
+  ["prev","next","city"].forEach(id => $(id).disabled = true);
   cancelAnimationFrame(raf);
   if (V) V.master.gain.setTargetAtTime(0, ac.currentTime, 0.4);
   setTimeout(() => ac && ac.suspend(), 1500);
   $("play").disabled = false; $("stop").disabled = true;
 }
 
+$("city").innerHTML = CITIES.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+$("prev").onclick = () => goCity(cityIdx - 1, true);
+$("next").onclick = () => goCity(cityIdx + 1, true);
+$("city").onchange = e => goCity(CITIES.findIndex(c => c.id === e.target.value), true);
+setInterval(() => {
+  const el = document.getElementById("countdown");
+  if (!el || !nextAt) return;
+  const s = Math.max(0, Math.round((nextAt - Date.now())/1000));
+  el.textContent = `next city in ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+}, 500);
 $("play").onclick = play;
 $("stop").onclick = stop;
 </script>
