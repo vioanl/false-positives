@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../shared/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -23,6 +24,7 @@
   <span>detections since you arrived <b id="count">0</b></span>
   <span>confirmed <b>0</b></span>
   <span>now reading <b id="where">…</b></span>
+  <button id="export">export receipt · pdf</button>
 </div>
 
 <div class="readout" style="margin-bottom:14px">
@@ -37,19 +39,24 @@
 </div>
 
 <div class="log" id="log" aria-live="off"></div>
+<p class="note">Text between detections: partly from Wikipedia, CC BY-SA 4.0.</p>
 </div>
 
 <script type="module">
 import { CITIES, WHO, POLL, getAir } from "../shared/air.js";
 
 // ----------------------------------------------------------------
-// Ioanna: replace these with your own Greek texts.
-// One line is inserted every so often between the detections.
+// Text inserted every so often between the detections.
 const POEM = [
-  "δεν υπάρχει τίποτα εδώ.",
-  "κανείς δεν μέτρησε αυτό το σημείο.",
-  "ο αέρας καθαρίζει. η βεβαιότητα μεγαλώνει."
+  "A false positive (disambiguation) is a result that indicates a given condition exists when it objectively does not.",
+  "A false positive error is a type I error where the test is checking a single condition, and wrongly gives an affirmative (positive) decision.",
+  "A false positive in machine learning is an error where a model incorrectly predicts a positive outcome when the actual outcome is negative.",
+  "A false positive in object detection occurs when a model incorrectly identifies and predicts the presence of an object that is not actually there in the image.",
+  "If an object is not captured in an image, it simply means it is not present within that specific frame, at that exact millisecond, under those lighting conditions."
 ];
+// the ending: appears only after the texts above have each been shown twice
+const ENDING = "Object detection relies on visual features like shapes, borders, and textures. Air pollutants are completely invisible.";
+const ENDING_AFTER = POEM.length * 2;
 const POEM_EVERY = 40;        // detections between poem lines
 const MAX_LINES  = 600;
 const CITY_EVERY = 60;        // detections before moving to the next city
@@ -57,7 +64,10 @@ const CITY_EVERY = 60;        // detections before moving to the next city
 
 const logEl = document.getElementById("log");
 const air = {};
-let cityIdx = 0, n = 0, sinceCity = 0, sincePoem = 0, poemIdx = 0;
+let cityIdx = 0, n = 0, sinceCity = 0, sincePoem = 0, poemIdx = 0, poemSince = 0;
+const records = [];             // everything printed this session, for the receipt
+const started = new Date();
+const MAX_RECORDS = 20000;
 
 async function loadAll(){
   await Promise.all(CITIES.map(async c => {
@@ -99,15 +109,20 @@ function line(){
     `conf ${conf.toFixed(2)}  box[${bx.join(",")}]  ` +
     `<span style="color:var(--phos-dim)">measured ${(a[k]||0).toFixed(1)} µg/m³ · detected: false</span>`;
   push(el);
+  if (records.length < MAX_RECORDS)
+    records.push({ t: stamp(), city: city.name, lat, lon, k, conf, box: bx.map(v => v.trim()), meas: (a[k]||0) });
 
   n++; sinceCity++; sincePoem++;
   document.getElementById("count").textContent = n.toLocaleString();
 
   if (sincePoem >= POEM_EVERY && POEM.length){
     const p = document.createElement("div");
-    p.className = "gr";
-    p.textContent = POEM[poemIdx++ % POEM.length];
+    const isEnd = poemSince >= ENDING_AFTER;
+    p.className = isEnd ? "gr end" : "gr";
+    p.textContent = isEnd ? ENDING : POEM[poemIdx++ % POEM.length];
+    poemSince = isEnd ? 0 : poemSince + 1;
     push(p);
+    if (records.length < MAX_RECORDS) records.push({ poem: p.textContent, end: isEnd });
     sincePoem = 0;
   }
   if (sinceCity >= CITY_EVERY) nextCity();
@@ -128,6 +143,92 @@ function push(el){
   while (logEl.childNodes.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
   if (atBottom) logEl.scrollTop = logEl.scrollHeight;
 }
+
+
+// ---------- receipt ----------
+function exportReceipt(){
+  if (!window.jspdf){ alert("PDF library did not load. Check your connection."); return; }
+  const { jsPDF } = window.jspdf;
+  const W = 80, M = 4, LH = 3.1, FS = 6.4;          // 80 mm thermal roll
+  const lines = [];                                  // [text, style]
+  const rule = "-".repeat(52);
+  const end = new Date();
+  const mins = ((end - started) / 60000).toFixed(1);
+
+  lines.push(["FALSE POSITIVES", "title"]);
+  lines.push(["vision_system/false_positives v0.1", "dim"]);
+  lines.push([`receipt no. ${Math.floor(Math.random()*1e8).toString().padStart(8,"0")}`, ""]);
+  lines.push([`printed  ${stamp()}`, ""]);
+  lines.push([`session  ${mins} min`, ""]);
+  lines.push([rule, "dim"]);
+
+  const counts = {};
+  for (const r of records){
+    if (r.poem){
+      if (r.end){ lines.push(["", ""]); lines.push(["", ""]); lines.push([r.poem, "bold"]); lines.push(["", ""]); lines.push(["", ""]); }
+      else { lines.push(["", ""]); lines.push([r.poem, "poem"]); lines.push(["", ""]); }
+      continue;
+    }
+    counts[r.k] = (counts[r.k] || 0) + 1;
+    lines.push([`${r.t.slice(11)}  ${r.city.padEnd(12," ")}  ${POLL[r.k].label.padEnd(5," ")} ${r.conf.toFixed(2)}`, ""]);
+    lines.push([`  ${r.lat}N ${r.lon}E  box[${r.box.join(",")}]`, "dim"]);
+    lines.push([`  measured ${r.meas.toFixed(1)} µg/m3   detected: FALSE`, "dim"]);
+  }
+
+  lines.push([rule, "dim"]);
+  lines.push(["TOTAL", "bold"]);
+  for (const k of Object.keys(WHO))
+    lines.push([`  ${POLL[k].label.padEnd(6," ")} ${String(counts[k]||0).padStart(7," ")} detections`, ""]);
+  lines.push([`  ${"all".padEnd(6," ")} ${String(records.filter(r=>!r.poem).length).padStart(7," ")} detections`, "bold"]);
+  lines.push([`  ${"real".padEnd(6," ")} ${"0".padStart(7," ")} detections`, "bold"]);
+  lines.push([rule, "dim"]);
+  lines.push(["AIR, AS MODELLED THIS HOUR", "bold"]);
+  for (const c of CITIES){
+    const a = air[c.id]; if (!a) continue;
+    lines.push([`  ${c.name}  ${a.time}`, ""]);
+    lines.push([`    PM2.5 ${a.pm2_5.toFixed(1)}  PM10 ${a.pm10.toFixed(1)}  NO2 ${a.nitrogen_dioxide.toFixed(1)}  O3 ${a.ozone.toFixed(1)}`, "dim"]);
+  }
+  lines.push(["  µg/m3 · Copernicus CAMS Europe via Open-Meteo", "dim"]);
+  lines.push(["  modelled, hourly. ground truth: none.", "dim"]);
+  lines.push([rule, "dim"]);
+  lines.push(["text: partly from Wikipedia, CC BY-SA 4.0.", "dim"]);
+  lines.push(["no detection on this receipt occurred.", ""]);
+  lines.push(["", ""]);
+
+  // wrap long lines to the roll width
+  const probe = new jsPDF({ unit:"mm", format:[W, 100] });
+  probe.setFont("courier","normal"); probe.setFontSize(FS);
+  const flat = [];
+  for (const [t, st] of lines){
+    if (st === "title"){ flat.push([t, st]); continue; }
+    const parts = probe.splitTextToSize(t, W - 2*M);
+    (parts.length ? parts : [""]).forEach(x => flat.push([x, st]));
+  }
+
+  // one long roll, split into pages only if it gets too long for a PDF page
+  const MAXH = 5000;
+  const perPage = Math.floor((MAXH - 2*M) / LH);
+  const pages = [];
+  for (let i = 0; i < flat.length; i += perPage) pages.push(flat.slice(i, i + perPage));
+
+  let doc = null;
+  pages.forEach((pg, pi) => {
+    const H = 2*M + pg.length*LH + (pi === 0 ? 4 : 0);
+    if (!doc) doc = new jsPDF({ unit:"mm", format:[W, H] });
+    else doc.addPage([W, H]);
+    let y = M + LH;
+    for (const [t, st] of pg){
+      if (st === "title"){ doc.setFont("courier","bold"); doc.setFontSize(13); doc.text(t, W/2, y+2, { align:"center" }); y += LH + 4; continue; }
+      doc.setFont("courier", st === "bold" ? "bold" : (st === "poem" ? "italic" : "normal"));
+      doc.setFontSize(FS);
+      doc.setTextColor(st === "dim" ? 90 : 0);
+      doc.text(t, M, y);
+      y += LH;
+    }
+  });
+  doc.save(`false-positives-receipt-${Date.now()}.pdf`);
+}
+document.getElementById("export").onclick = exportReceipt;
 
 function loop(){ setTimeout(loop, line()); }
 
